@@ -1,8 +1,103 @@
 import loadingGif from "./assets/loadingTenor.gif";
 import validator from "validator";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase";
+import {
+  CategoryScale,
+  Chart,
+  Legend,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip,
+} from "chart.js";
 import "./App.css";
+
+Chart.register(
+  CategoryScale,
+  Legend,
+  LinearScale,
+  LineController,
+  LineElement,
+  PointElement,
+  Tooltip,
+);
+
+function PriceHistoryChart({ observations }) {
+  const canvasRef = useRef(null);
+
+  const points = useMemo(
+    () =>
+      observations
+        .map((observation) => ({
+          observedAt: new Date(observation.observed_at),
+          price:
+            observation.price == null || observation.price === ""
+              ? Number.NaN
+              : Number(observation.price),
+          currency: observation.currency?.trim().toUpperCase() || "Unknown",
+        }))
+        .filter(
+          (point) =>
+            !Number.isNaN(point.observedAt.getTime()) &&
+            Number.isFinite(point.price),
+        )
+        .sort((a, b) => a.observedAt - b.observedAt),
+    [observations],
+  );
+
+  useEffect(() => {
+    if (!canvasRef.current || points.length === 0) return;
+
+    const currencies = [...new Set(points.map((point) => point.currency))];
+    const colors = ["#034263", "#a73bff", "#d65a31", "#238636"];
+    const chart = new Chart(canvasRef.current, {
+      type: "line",
+      data: {
+        labels: points.map((point) => point.observedAt.toLocaleString()),
+        datasets: currencies.map((currency, index) => ({
+          label:
+            currency === "Unknown"
+              ? "Price (unknown currency)"
+              : `Price (${currency})`,
+          data: points.map((point) =>
+            point.currency === currency ? point.price : null,
+          ),
+          borderColor: colors[index % colors.length],
+          backgroundColor: colors[index % colors.length],
+          tension: 0.25,
+          spanGaps: false,
+        })),
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: {
+            title: { display: true, text: "Observed at" },
+          },
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: "Price" },
+          },
+        },
+      },
+    });
+
+    return () => chart.destroy();
+  }, [points]);
+
+  if (points.length === 0) {
+    return <p>No valid price observations are available to chart.</p>;
+  }
+
+  return (
+    <div className="price-chart">
+      <canvas ref={canvasRef} aria-label="Price history line chart" />
+    </div>
+  );
+}
 
 function App() {
   const [session, setSession] = useState(null);
@@ -436,6 +531,14 @@ function App() {
             </>
           )}
         </div>
+      </section>
+      <section id="dashboard">
+        {rawMetricsData !== null && (
+          <div className="price-chart-card">
+            <h2>Price history</h2>
+            <PriceHistoryChart observations={rawMetricsData} />
+          </div>
+        )}
       </section>
     </>
   );
