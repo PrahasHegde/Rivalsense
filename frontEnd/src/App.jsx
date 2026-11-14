@@ -1,18 +1,23 @@
 import loadingGif from "./assets/loadingTenor.gif";
 import validator from "validator";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "./supabase";
 import "./App.css";
 
 function App() {
   const [session, setSession] = useState(null);
-  const [storeURL, setUrl] = useState("");
+  const [watchItemAsString, setWatchItem] = useState("");
   const [rawMetricsData, setRawData] = useState(null);
   const [askedAndLoading, setLoadingStatus] = useState(false);
   const [error, setError] = useState(null);
+  const [successMessage, setSuccessMessage] = useState(null);
   const [reporterOrOwner, setUserType] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [savingUserType, setSavingUserType] = useState(false);
+
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  const dropdownElRef = useRef(null);
 
   const ErrorType = {
     urlInvalid: "The given URL is invalid.",
@@ -24,6 +29,23 @@ function App() {
     businessOwner: "business_owner",
     reporter: "reporter",
   };
+
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (
+        isMenuOpen &&
+        dropdownElRef.current &&
+        !dropdownElRef.current.contains(event.target)
+      ) {
+        setIsMenuOpen(false);
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isMenuOpen]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -95,11 +117,11 @@ function App() {
     setSavingUserType(false);
   }
 
-  async function callWithStoreUrl() {
+  async function callWithWatchItemAsString() {
     setLoadingStatus(true);
     setError(null);
     setRawData(null);
-    const urlToUse = storeURL.trim();
+    const urlToUse = watchItemAsString.trim();
     // console.log("urlToUse:", urlToUse);
     try {
       const { data, error } = await supabase
@@ -126,7 +148,78 @@ function App() {
     }
   }
 
-  const isValidStoreUrl = validator.isURL(storeURL.trim(), {
+  async function toggleUserType() {
+    if (!session?.user || savingUserType) return;
+
+    const newUserType =
+      reporterOrOwner === userType.businessOwner
+        ? userType.reporter
+        : userType.businessOwner;
+
+    setSavingUserType(true);
+    const { error } = await supabase.from("profiles").upsert(
+      {
+        id: session.user.id,
+        email: session.user.email,
+        user_type: newUserType,
+      },
+      { onConflict: "id" },
+    );
+
+    if (error) {
+      console.error("Error changing profile:", error.message);
+      setError(error.message);
+    } else {
+      setUserType(newUserType);
+    }
+    setSavingUserType(false);
+  }
+
+  async function addToWatchlist() {
+    if (!session?.user) {
+      setError("Sign in before adding a watch item.");
+      return;
+    }
+    if (reporterOrOwner !== userType.reporter || askedAndLoading) {
+      return;
+    }
+
+    const preppedItem = watchItemAsString.trim();
+    if (preppedItem === "") {
+      setError("Enter a concept to add to your watchlist.");
+      return;
+    }
+
+    setLoadingStatus(true);
+    setError(null);
+    setSuccessMessage(null);
+    try {
+      const { error } = await supabase.from("watch_items").insert({
+        user_id: session.user.id,
+        item_url: preppedItem,
+      });
+
+      if (error) {
+        console.error("Error adding watch item:", error.message);
+        setError(`Could not add the watch item: ${error.message}`);
+        return;
+      }
+
+      setWatchItem("");
+      setSuccessMessage("Added to your watchlist.");
+    } catch (requestError) {
+      console.error("Error adding watch item:", requestError);
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : "Could not add the watch item.",
+      );
+    } finally {
+      setLoadingStatus(false);
+    }
+  }
+
+  const valInputValidURL = validator.isURL(watchItemAsString.trim(), {
     require_protocol: true,
   });
 
@@ -147,6 +240,8 @@ function App() {
     const { error } = await supabase.auth.signOut();
     if (error) console.error("Error signing out:", error.message);
   };
+
+  const avatarUrl = session?.user?.user_metadata?.avatar_url;
 
   return (
     <>
@@ -191,11 +286,40 @@ function App() {
         )}
         {session && (
           <>
-            <img
-              src={session.user.user_metadata.avatar_url}
-              alt="Profile"
-              className="profile-pic"
-            />
+            {avatarUrl && (
+              <div className="profilePhotoWrapper" ref={dropdownElRef}>
+                <button
+                  type="button"
+                  className="profile-menu-trigger"
+                  aria-label="Open profile menu"
+                  aria-expanded={isMenuOpen}
+                  aria-controls="profile-menu"
+                  onClick={() => setIsMenuOpen((open) => !open)}
+                >
+                  <img src={avatarUrl} alt="" className="profile-pic" />
+                </button>
+                {isMenuOpen && (
+                  <nav
+                    className="dropdown-menu"
+                    id="profile-menu"
+                    aria-label="Profile"
+                  >
+                    <a href="#dashboard" onClick={() => setIsMenuOpen(false)}>
+                      Dashboard
+                    </a>
+                    <a href="#watchlist" onClick={() => toggleUserType()}>
+                      Toggle Role:
+                      {reporterOrOwner === userType.businessOwner
+                        ? " Business Owner"
+                        : " Reporter"}
+                    </a>
+                    <a href="#account" onClick={() => setIsMenuOpen(false)}>
+                      Account settings
+                    </a>
+                  </nav>
+                )}
+              </div>
+            )}
             <button className="sign-out-button" onClick={signOut}>
               Sign Out
             </button>
@@ -205,7 +329,7 @@ function App() {
 
       <section id="center">
         <div>
-          {savingUserType == userType.businessOwner && (
+          {reporterOrOwner == userType.businessOwner && (
             <h1>
               Are you ready to get a sense for your rivals' strengths? <br />{" "}
               ...And
@@ -213,23 +337,26 @@ function App() {
             </h1>
           )}
 
-          {savingUserType == userType.reporter && (
+          {reporterOrOwner == userType.reporter && (
             <h1>
               Let us keep in touch with the world, <br />
-              <b>so you can keep in tough with your writing.</b>?
+              <b>so you can keep in touch with your writing.</b>
             </h1>
           )}
-          <h1>
-            Are you ready to get a sense for your rivals' strengths? <br />{" "}
-            ...And
-            <b> weaknesses</b>?
-          </h1>
+
+          {reporterOrOwner == null && (
+            <h1>
+              We help you track current events, products, competitors, buzz, and
+              more.
+            </h1>
+          )}
+
           {!session ? (
             <>
               <h2>
                 And we're ready to help! Just log in with Google, and we'll
                 handle the reconnaissance so you can handle rolling around in
-                money.
+                success.
               </h2>
             </>
           ) : profileLoading ? (
@@ -256,28 +383,47 @@ function App() {
             </div>
           ) : (
             <>
-              <p>Type your storefront's url below...</p>
+              {reporterOrOwner === userType.businessOwner && (
+                <p>Type your storefront's url below...</p>
+              )}
+              {reporterOrOwner === userType.reporter && (
+                <p>What concept do you want to track?</p>
+              )}
+
               <div className="inputs">
                 <input
                   type="text"
-                  value={storeURL}
-                  onChange={(event) => setUrl(event.target.value)}
+                  value={watchItemAsString}
+                  placeholder={
+                    reporterOrOwner === userType.reporter
+                      ? "Enter a concept"
+                      : "Enter a storefront URL"
+                  }
+                  onChange={(event) => {
+                    setWatchItem(event.target.value);
+                    setError(null);
+                    setSuccessMessage(null);
+                  }}
                 />
                 <button
                   onClick={() => {
-                    if (isValidStoreUrl) {
-                      console.log(
-                        "Valid URL, calling with storeURL:",
-                        storeURL,
-                      );
-                      callWithStoreUrl(storeURL);
-                    } else {
-                      setError(ErrorType.urlInvalid);
+                    setError(null);
+                    setSuccessMessage(null);
+                    if (reporterOrOwner === userType.businessOwner) {
+                      if (valInputValidURL) {
+                        callWithWatchItemAsString();
+                      } else {
+                        setError(ErrorType.urlInvalid);
+                      }
+                    } else if (reporterOrOwner === userType.reporter) {
+                      addToWatchlist();
                     }
                   }}
-                  disabled={false}
+                  disabled={askedAndLoading}
                 >
-                  Add Site To Watchlist
+                  {reporterOrOwner === userType.reporter
+                    ? "Add Concept to Watchlist"
+                    : "Add Site to Watchlist"}
                 </button>
               </div>
               {askedAndLoading && (
@@ -286,6 +432,7 @@ function App() {
                 </div>
               )}
               {error && <p role="alert">{error}</p>}
+              {successMessage && <p role="status">{successMessage}</p>}
             </>
           )}
         </div>
