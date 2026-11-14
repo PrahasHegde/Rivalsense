@@ -1,0 +1,3 @@
+# Separate, opt-in dependency set. Pure Python driver avoids libpq CPU-architecture coupling.
+# Validate this supported range in a dedicated integration venv before database use.
+pg8000>=1.31.2,<2
