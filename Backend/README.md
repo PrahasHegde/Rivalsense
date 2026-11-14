@@ -1,6 +1,6 @@
-# MarginGuard backend
+# RivalSense backend
 
-FastAPI backend for RivalSense (originally MarginGuard), with Context.dev product
+FastAPI backend for RivalSense, with Context.dev product
 extraction. The original root and health routes are preserved. Supabase tracking
 is available through the backend; no frontend is included.
 

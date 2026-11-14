@@ -1,1 +1,1 @@
-"""MarginGuard backend package."""
+"""RivalSense backend package."""

@@ -8,7 +8,7 @@ from app.api.prices import router as prices_router
 from app.api.tracking import router as tracking_router
 from app.core.config import CORS_ORIGINS
 
-app = FastAPI(title="MarginGuard API", version="0.1.0")
+app = FastAPI(title="RivalSense API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
