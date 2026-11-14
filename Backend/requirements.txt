@@ -1,0 +1,6 @@
+fastapi==0.162.7
+uvicorn==0.54.0
+httpx==0.28.1
+python-dotenv==1.2.4
+context.dev==2.50.0
+postgrest==2.34.1
