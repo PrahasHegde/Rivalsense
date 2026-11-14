@@ -8,7 +8,6 @@ function App() {
   const [session, setSession] = useState(null);
   const [storeURL, setUrl] = useState("");
   const [rawMetricsData, setRawData] = useState(null);
-  const [parsedData, setParsedData] = useState(null);
   const [askedAndLoading, setLoadingStatus] = useState(false);
   const [error, setError] = useState(null);
   const [reporterOrOwner, setUserType] = useState(null);
@@ -96,10 +95,35 @@ function App() {
     setSavingUserType(false);
   }
 
-  function callWithStoreUrl() {
+  async function callWithStoreUrl() {
     setLoadingStatus(true);
+    setError(null);
+    setRawData(null);
     const urlToUse = storeURL.trim();
-    return urlToUse;
+    // console.log("urlToUse:", urlToUse);
+    try {
+      const { data, error } = await supabase
+        .from("price_observations")
+        .select("*")
+        .eq("source_url", urlToUse);
+
+      if (error) {
+        console.error("Error loading price observations:", error.message);
+        setError(`${ErrorType.backendApiError}: ${error.message}`);
+        return;
+      }
+      console.log("Raw data received:", data);
+      setRawData(data);
+    } catch (requestError) {
+      console.error("Error loading price observations:", requestError);
+      setError(
+        requestError instanceof Error
+          ? requestError.message
+          : ErrorType.backendApiError,
+      );
+    } finally {
+      setLoadingStatus(false);
+    }
   }
 
   const isValidStoreUrl = validator.isURL(storeURL.trim(), {
@@ -181,6 +205,20 @@ function App() {
 
       <section id="center">
         <div>
+          {savingUserType == userType.businessOwner && (
+            <h1>
+              Are you ready to get a sense for your rivals' strengths? <br />{" "}
+              ...And
+              <b> weaknesses</b>?
+            </h1>
+          )}
+
+          {savingUserType == userType.reporter && (
+            <h1>
+              Let us keep in touch with the world, <br />
+              <b>so you can keep in tough with your writing.</b>?
+            </h1>
+          )}
           <h1>
             Are you ready to get a sense for your rivals' strengths? <br />{" "}
             ...And
@@ -228,7 +266,11 @@ function App() {
                 <button
                   onClick={() => {
                     if (isValidStoreUrl) {
-                      callWithStoreUrl();
+                      console.log(
+                        "Valid URL, calling with storeURL:",
+                        storeURL,
+                      );
+                      callWithStoreUrl(storeURL);
                     } else {
                       setError(ErrorType.urlInvalid);
                     }
@@ -238,6 +280,11 @@ function App() {
                   Add Site To Watchlist
                 </button>
               </div>
+              {askedAndLoading && (
+                <div className="loading-container">
+                  <img src={loadingGif} alt="Loading..." />
+                </div>
+              )}
               {error && <p role="alert">{error}</p>}
             </>
           )}
