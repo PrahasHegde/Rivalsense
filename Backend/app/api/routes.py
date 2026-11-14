@@ -7,7 +7,7 @@ router = APIRouter()
 
 @router.get("/")
 def root() -> dict[str, str]:
-    return {"message": "Welcome to MarginGuard API", "version": "0.1.0"}
+    return {"message": "Welcome to RivalSense API", "version": "0.1.0"}
 
 
 @router.get("/health")
