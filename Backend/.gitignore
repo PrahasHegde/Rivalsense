@@ -1,0 +1,40 @@
+# Virtual environments
+.venv/
+venv/
+
+# Local environment settings and secrets
+.env
+.env.*
+!.env.example
+
+# Python caches and test output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors and operating system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Local schema export
+/rivalsense_columns.csv.csv
+
+# Generated Python artifacts and local credentials
+.ruff_cache/
+.mypy_cache/
+.tox/
+.nox/
+coverage.xml
+.coverage.*
+*.egg-info/
+build/
+dist/
+*.log
+*.pem
+*.key
+*.p12
+*.pfx
