@@ -11,6 +11,7 @@ from context.dev import APIConnectionError, APIStatusError, APITimeoutError
 from fastapi.testclient import TestClient
 
 from app.main import app
+from offline_support import authorize_functional_tests
 from app.services.context_client import scrape_product
 from app.services.url_safety import UnsafeURL, check_redirects, public_destination
 
@@ -28,6 +29,7 @@ def page(**changes):
 
 class EndpointTests(unittest.TestCase):
     def setUp(self):
+        authorize_functional_tests(self)
         self.env = patch.dict(os.environ, {"CONTEXT_DEV_API_KEY": "test-placeholder"})
         self.env.start()
         self.addCleanup(self.env.stop)

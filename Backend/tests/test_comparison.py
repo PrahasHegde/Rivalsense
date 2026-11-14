@@ -10,6 +10,7 @@ import httpx
 from context.dev import APIConnectionError, APITimeoutError
 from fastapi.testclient import TestClient
 from app.main import app
+from offline_support import authorize_functional_tests
 
 URL = "https://shop.example.com/products/mug"
 SECOND = "https://other.example.com/products/mug"
@@ -25,6 +26,7 @@ def page(url=URL, **changes):
 
 class ComparisonTests(unittest.TestCase):
     def setUp(self):
+        authorize_functional_tests(self)
         patches = [
             patch.dict(os.environ, {"CONTEXT_DEV_API_KEY": "test-placeholder"}),
             patch("app.services.extraction.check_redirects", side_effect=lambda url: url),

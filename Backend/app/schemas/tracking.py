@@ -33,6 +33,17 @@ class ProductRow(ProductCreate):
     id: UUID
     user_id: UUID
     created_at: datetime
+    is_archived: bool = False
+
+
+class ProductUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_archived: bool
+
+
+class ListingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    is_active: bool
 
 
 class ListingCreate(ExtractRequest):
@@ -65,6 +76,7 @@ class ObservationRow(BaseModel):
     matching_status: str = "needs_review"
     extraction_error: str | None = None
     extracted_product: dict | None = None
+    capture_event_id: UUID | None = None
 
 
 class AlertRow(BaseModel):
@@ -81,6 +93,7 @@ class AlertRow(BaseModel):
     source_url: str | None = None
     status: str
     created_at: datetime
+    source_observation_id: UUID | None = None
 
 
 class ChangeResult(BaseModel):

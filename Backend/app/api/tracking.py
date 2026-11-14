@@ -4,7 +4,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from app.core.auth import UserDatabase, get_user_database
-from app.schemas.tracking import ProductCreate, ProductRow, ListingCreate, ListingRow, ObservationRow, AlertRow, RecordResult
+from app.schemas.tracking import ProductCreate, ProductRow, ProductUpdate, ListingCreate, ListingRow, ListingUpdate, ObservationRow, AlertRow, RecordResult
 from app.services.database import Repository
 from app.services.history import record_observation
 from app.services.url_safety import UnsafeURL, public_destination
@@ -28,6 +28,16 @@ def products(session: Session, limit: Limit = 50, offset: Offset = 0):
 @router.get("/products/{product_id}", response_model=ProductRow)
 def product(product_id: UUID, session: Session):
     return Repository(session).get("products", product_id)
+
+
+@router.patch("/products/{product_id}", response_model=ProductRow)
+def archive_product(product_id: UUID, body: ProductUpdate, session: Session):
+    return Repository(session).update("products", product_id, body.model_dump())
+
+
+@router.patch("/competitors/{listing_id}", response_model=ListingRow)
+def activate_listing(listing_id: UUID, body: ListingUpdate, session: Session):
+    return Repository(session).update("competitor_listings", listing_id, body.model_dump())
 
 
 @router.post("/products/{product_id}/competitors", response_model=ListingRow, status_code=201)

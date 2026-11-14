@@ -1,4 +1,6 @@
 -- READ ONLY. Review these outputs in the Supabase SQL editor before any migration.
+-- Supplement with inspect_security_readonly.sql. Export all ordered pages and
+-- reconcile total_rows; a 100-row export is not a complete permission audit.
 -- Share schema results only. Never SELECT signing secrets, JWT settings, or user rows.
 SELECT table_name, column_name, data_type, numeric_precision, numeric_scale,
        is_nullable, column_default

@@ -6,7 +6,7 @@ from uuid import uuid4
 import unittest
 
 from app.services.capture_attestation import capture_payload, sign_capture, verify_capture
-from app.services.history import detect_change
+from app.services.capture_attestation import normalize_observation
 from test_tracking import product, listing, raw, observation, USER_A, USER_B
 from decimal import Decimal
 
@@ -66,8 +66,12 @@ class CaptureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             record(changed, uuid4())
 
-    def test_threshold_boundaries_both_directions(self):
-        old = observation("100.00")
-        for price, exceeds in (("105.00", False), ("105.01", True), ("95.00", False), ("94.99", True)):
-            current = observation(price, observed_at="2026-11-14T13:00:00+00:00")
-            self.assertEqual(detect_change(old, current, Decimal(5)).exceeds_threshold, exceeds)
+    def test_numeric_precision_and_currency_normalization(self):
+        extracted = raw()
+        extracted.price = Decimal("1.999")
+        extracted.currency = "eur"
+        normalized = normalize_observation(extracted)
+        self.assertIsNone(normalized.price)
+        self.assertEqual(normalized.currency, "EUR")
+        self.assertIn("numeric(14,2)", normalized.error)
+        self.assertEqual(extracted.price, Decimal("1.999"))

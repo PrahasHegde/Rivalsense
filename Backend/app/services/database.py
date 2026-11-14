@@ -46,31 +46,27 @@ class Repository:
             raise HTTPException(503, "Database returned no inserted record")
         return rows[0]
 
-    def existing_observation(self, identifier, listing_id):
-        rows = execute(self.select("price_observations").eq("id", str(identifier)).limit(1))
-        if rows and rows[0]["listing_id"] != str(listing_id):
-            raise HTTPException(409, "Idempotency key was used for another listing")
-        return rows[0] if rows else None
-
-    def previous_valid(self, listing_id, currency):
-        query = self.select("price_observations").eq("listing_id", str(listing_id)).eq(
-            "currency", currency).eq("matching_status", "confirmed").in_(
-            "extraction_status", ["success", "partial"]).not_.is_("price", "null")
-        rows = execute(query.order("observed_at", desc=True).order("id", desc=True).limit(1))
-        return rows[0] if rows else None
-
-    def record_atomic(self, listing_id, observation, previous_id, alert):
-        # Only available after the separately approved SQL migration.
+    def signed_rpc(self, name, payload, signature):
+        allowed = {"rivalsense_record_verified_capture", "rivalsense_capture_receipt", "rivalsense_rate_limit"}
+        if name not in allowed:
+            raise ValueError("Unsupported signed RPC")
         try:
-            return self.client.rpc("rivalsense_record_observation", {
-                "p_listing_id": str(listing_id), "p_observation": observation,
-                "p_previous_id": previous_id, "p_alert": alert,
-            }).execute().data
+            result = self.client.rpc(name, {"p_payload": payload, "p_signature": signature}).execute().data
         except APIError as exc:
-            if exc.code == "40001":
-                return None  # Concurrent observation changed the baseline; recompute.
-            if exc.code == "23505":
-                raise HTTPException(409, "Observation identifier conflict") from None
-            raise HTTPException(503, "Atomic recording failed; verify the approved migration") from None
+            if exc.code in ("23505", "22023"):
+                raise HTTPException(409, "Capture conflicts with the stored identity or receipt") from None
+            if exc.code == "42501":
+                raise HTTPException(403, "Signed operation is not permitted") from None
+            raise HTTPException(503, "Recording service unavailable; retry with the same Idempotency-Key") from None
         except httpx.HTTPError:
-            raise HTTPException(503, "Database is unavailable") from None
+            raise HTTPException(503, "Recording service unavailable; retry with the same Idempotency-Key") from None
+        if not isinstance(result, dict):
+            raise HTTPException(503, "Invalid recording service response")
+        return result
+
+    def update(self, table, identifier, values):
+        self.get(table, identifier)
+        rows = execute(self.client.from_(table).update(values).eq("user_id", self.user_id).eq("id", str(identifier)))
+        if not rows:
+            raise HTTPException(404, "Record not found")
+        return rows[0]
