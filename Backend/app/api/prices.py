@@ -8,7 +8,7 @@ from app.services.extraction import extract_product
 from app.services.comparison import compare_prices
 from app.core.auth import UserDatabase, get_user_database
 from app.services.database import Repository
-from app.services.rate_limit import extraction_budget
+from app.services.read_budget import reading_budget as extraction_budget
 
 router = APIRouter(prefix="/api/prices", tags=["prices"])
 Session = Annotated[UserDatabase, Depends(get_user_database)]

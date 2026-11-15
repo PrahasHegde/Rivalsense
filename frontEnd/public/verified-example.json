@@ -1,0 +1,40 @@
+{
+  "question": "Who founded Microsoft and in what year?",
+  "answer": "Microsoft was founded by Bill Gates and Paul Allen in 1975.",
+  "keywords": [
+    "Microsoft",
+    "founders",
+    "Bill Gates",
+    "Paul Allen",
+    "1975"
+  ],
+  "sources": [
+    {
+      "title": "en.wikipedia.org",
+      "url": "https://en.wikipedia.org/wiki/Timeline_of_Microsoft#Full_timeline_of_Microsoft",
+      "publisher": null,
+      "published_at": null
+    }
+  ],
+  "research_data": {
+    "facts": [
+      {
+        "label": "Founders",
+        "value": "Bill Gates, Paul Allen",
+        "source_url": "https://en.wikipedia.org/wiki/Timeline_of_Microsoft#Full_timeline_of_Microsoft"
+      },
+      {
+        "label": "Year founded",
+        "value": "1975",
+        "source_url": "https://en.wikipedia.org/wiki/Timeline_of_Microsoft#Full_timeline_of_Microsoft"
+      }
+    ],
+    "uncertainties": [
+      "None"
+    ],
+    "evidence_note": "Saved real Context.dev probe. This is a dated demonstration snapshot, not a live request."
+  },
+  "status": "completed",
+  "retrieved_at": "2026-11-14T22:55:21.859789+00:00",
+  "persistence": "not_configured"
+}

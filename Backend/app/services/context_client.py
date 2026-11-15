@@ -26,3 +26,18 @@ def scrape_product(url: str):
             timeout_opts={"milliseconds": 55000, "behavior": "return-partial"},
             zdr="disabled",
         )
+
+
+def research_question(question: str):
+    with ContextDev(api_key=require_api_key(), timeout=65.0, max_retries=0) as client:
+        return client.web.answers(
+            task=("Research the following question using reliable web sources. "
+                  "Include dates and units for figures, identify uncertainty, and never invent facts or URLs. "
+                  "For current prices prefer the actual product page. Question: " + question),
+            mode="fast",
+            json_format={"answer": "", "keywords": [""],
+                         "facts": [{"label": "", "value": "", "source_url": ""}],
+                         "uncertainties": [""]},
+            timeout_opts={"milliseconds": 30000, "behavior": "return-partial"},
+            zdr="disabled",
+        )

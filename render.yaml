@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: rivalsense-demo
+    runtime: docker
+    branch: feature/hackathon-demo
+    region: frankfurt
+    plan: free
+    numInstances: 1
+    autoDeployTrigger: "off"
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    envVars:
+      - key: CONTEXT_DEV_API_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_PUBLISHABLE_KEY
+        sync: false
+      - key: RIVALSENSE_READ_BUDGET
+        value: local
+      - key: RIVALSENSE_READS_PER_MINUTE
+        value: "10"
+      - key: RIVALSENSE_GLOBAL_READS_PER_MINUTE
+        value: "60"
+      - key: RIVALSENSE_READ_CONCURRENCY
+        value: "2"
+      - key: RIVALSENSE_RECORDING_ENABLED
+        value: "false"
+      - key: RESEARCH_HISTORY_ENABLED
+        value: "false"
