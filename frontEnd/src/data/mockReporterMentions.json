@@ -1,0 +1,85 @@
+{
+  "notice": "Synthetic reporter mention rows for frontend testing; schema is provisional.",
+  "mentions": [
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00101",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Community groups outline local climate resilience plans",
+      "source_name": "Example Daily",
+      "source_url": "https://example.com/news/local-resilience-plans",
+      "published_at": "2026-11-10T08:30:00Z",
+      "observed_at": "2026-11-10T09:00:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00102",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Researchers publish a regional temperature outlook",
+      "source_name": "Example Science",
+      "source_url": "https://example.com/science/regional-temperature-outlook",
+      "published_at": "2026-11-10T14:15:00Z",
+      "observed_at": "2026-11-10T15:00:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00103",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "City council approves an urban tree-planting initiative",
+      "source_name": "Example Journal",
+      "source_url": "https://example.com/cities/urban-tree-initiative",
+      "published_at": "2026-11-11T10:00:00Z",
+      "observed_at": "2026-11-11T10:30:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00104",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "A new report compares renewable energy projects",
+      "source_name": "Example Business",
+      "source_url": "https://example.com/business/renewable-projects-report",
+      "published_at": "2026-11-12T07:45:00Z",
+      "observed_at": "2026-11-12T08:00:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00105",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Coastal towns coordinate flood preparedness guidance",
+      "source_name": "Example Daily",
+      "source_url": "https://example.com/news/coastal-preparedness",
+      "published_at": "2026-11-12T16:20:00Z",
+      "observed_at": "2026-11-12T17:00:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00106",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Schools introduce a sustainability research program",
+      "source_name": "Example Education",
+      "source_url": "https://example.com/education/sustainability-program",
+      "published_at": "2026-11-13T11:10:00Z",
+      "observed_at": "2026-11-13T11:30:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00107",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Analysts discuss changing investment priorities",
+      "source_name": "Example Business",
+      "source_url": "https://example.com/markets/investment-priorities",
+      "published_at": "2026-11-14T09:25:00Z",
+      "observed_at": "2026-11-14T10:00:00Z"
+    },
+    {
+      "id": "d17f80d2-719a-4b79-9eaa-86bb16a00108",
+      "user_id": "a72f5571-ecf3-4ad0-9c2c-ea84430a9e33",
+      "concept": "climate change",
+      "title": "Regional transport agencies publish an emissions update",
+      "source_name": "Example Journal",
+      "source_url": "https://example.com/transport/emissions-update",
+      "published_at": "2026-11-15T07:40:00Z",
+      "observed_at": "2026-11-15T08:00:00Z"
+    }
+  ]
+}

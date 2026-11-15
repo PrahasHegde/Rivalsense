@@ -1,5 +1,7 @@
 import loadingGif from "./assets/loadingTenor.gif";
 import validator from "validator";
+import mockPriceObservations from "./data/mockPriceObservations.json";
+import mockReporterMentions from "./data/mockReporterMentions.json";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "./supabase";
 import {
@@ -26,6 +28,8 @@ Chart.register(
 
 const BUSINESS_OWNER = "business_owner";
 const REPORTER = "reporter";
+const DEMO_WATCH_URL = "https://www.prisma.fi/";
+const DEMO_REPORTER_CONCEPT = "climate change";
 
 function filterWatchlistForRole(items, role) {
   if (role === BUSINESS_OWNER) {
@@ -135,26 +139,58 @@ function TopThreeListCard({ title, items }) {
   return (
     <div className="top-three-list-card">
       <h2>{title}</h2>
-      <ul style={{ listStyleType: "none", paddingLeft: "10px" }}>
-        {items.map((item, index) => (
-          <li key={index}>
-            {item} (title of news story) <br />
-            From (source of news story) <br />
-            Published on (date of news story) <br />
-          </li>
-        ))}
-      </ul>
+      {items.length === 0 ? (
+        <p>No mention data is available for this concept yet.</p>
+      ) : (
+        <ul style={{ listStyleType: "none", paddingLeft: "10px" }}>
+          {items.map((item) => (
+            <li key={item.id}>
+              <a href={item.source_url} target="_blank" rel="noreferrer">
+                {item.title}
+              </a>
+              <br />
+              From {item.source_name}
+              <br />
+              Published on {new Date(item.published_at).toLocaleDateString()}
+              <br />
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
 
+function getDailyMentionHistory(mentions) {
+  const mentionsByDay = new Map();
+  mentions.forEach((mention) => {
+    const publishedAt = new Date(mention.published_at);
+    if (Number.isNaN(publishedAt.getTime())) return;
+
+    const day = publishedAt.toISOString().slice(0, 10);
+    mentionsByDay.set(day, (mentionsByDay.get(day) ?? 0) + 1);
+  });
+
+  return [...mentionsByDay.entries()]
+    .map(([day, prevalence]) => ({
+      observed_at: `${day}T12:00:00.000Z`,
+      prevalence,
+    }))
+    .sort(
+      (a, b) =>
+        new Date(a.observed_at).getTime() -
+        new Date(b.observed_at).getTime(),
+    );
+}
+
 function productNameFromObservation(observation) {
   const extractedProduct = observation.extracted_product;
+  const extracted = extractedProduct?.extracted ?? extractedProduct;
   return (
     observation.product_name ??
-    extractedProduct?.product_name ??
-    extractedProduct?.name ??
-    extractedProduct?.product?.name ??
+    extracted?.product_name ??
+    extracted?.name ??
+    extracted?.product?.name ??
     null
   );
 }
@@ -235,6 +271,67 @@ function getTopProducts(observations = []) {
     .slice(0, 5);
 }
 
+function getAveragePriceHistory(observations = []) {
+  const latestProductPricesByDay = new Map();
+
+  observations.forEach((observation) => {
+    const productId = observation.listing_id ?? observation.source_url;
+    const price = Number(observation.price);
+    const observedAt = new Date(observation.observed_at);
+    if (
+      !productId ||
+      observation.price == null ||
+      observation.price === "" ||
+      !Number.isFinite(price) ||
+      price < 0 ||
+      Number.isNaN(observedAt.getTime())
+    ) {
+      return;
+    }
+
+    const date = observedAt.toISOString().slice(0, 10);
+    const currency =
+      String(observation.currency ?? "")
+        .trim()
+        .toUpperCase() || "Unknown";
+    const key = `${date}:${currency}:${productId}`;
+    const existing = latestProductPricesByDay.get(key);
+    if (!existing || observedAt > existing.observedAt) {
+      latestProductPricesByDay.set(key, {
+        date,
+        currency,
+        price,
+        observedAt,
+      });
+    }
+  });
+
+  const dailyAverages = new Map();
+  latestProductPricesByDay.forEach(({ date, currency, price }) => {
+    const key = `${date}:${currency}`;
+    const average = dailyAverages.get(key) ?? {
+      date,
+      currency,
+      total: 0,
+      count: 0,
+    };
+    average.total += price;
+    average.count += 1;
+    dailyAverages.set(key, average);
+  });
+
+  return [...dailyAverages.values()]
+    .map(({ date, currency, total, count }) => ({
+      observed_at: `${date}T12:00:00.000Z`,
+      price: total / count,
+      currency,
+    }))
+    .sort(
+      (a, b) =>
+        new Date(a.observed_at).getTime() - new Date(b.observed_at).getTime(),
+    );
+}
+
 function formatPrice(price, currency) {
   const amount = Number(price);
   if (!Number.isFinite(amount)) return "Price unavailable";
@@ -255,6 +352,24 @@ async function fetchCompetitorObservations(competitorUrl) {
   const host = new URL(competitorUrl).hostname
     .toLowerCase()
     .replace(/^www\./, "");
+  const mockMode =
+    import.meta.env.DEV &&
+    new URLSearchParams(window.location.search).get("mockData") === "true";
+
+  if (mockMode) {
+    return mockPriceObservations.observations.filter((observation) => {
+      try {
+        return (
+          new URL(observation.source_url).hostname
+            .toLowerCase()
+            .replace(/^www\./, "") === host
+        );
+      } catch {
+        return false;
+      }
+    });
+  }
+
   const { data, error } = await supabase
     .from("price_observations")
     .select("*")
@@ -277,11 +392,16 @@ async function fetchCompetitorObservations(competitorUrl) {
   });
 }
 
-function AveragePriceCard({ products, selectedProduct, onSelectProduct }) {
+function AveragePriceCard({
+  products,
+  selectedProduct,
+  onSelectProduct,
+  isMockModeEnabled,
+}) {
   return (
     <div className="average-price-card">
       <div className="average-price-card-header">
-        <h2>Competitor products</h2>
+        <h2>Average Price</h2>
         <select
           aria-label="Choose a competitor product"
           value={selectedProduct?.id ?? ""}
@@ -320,7 +440,7 @@ function AveragePriceCard({ products, selectedProduct, onSelectProduct }) {
               )}
             </strong>
           </p>
-          {selectedProduct.sourceUrl && (
+          {selectedProduct.sourceUrl && !isMockModeEnabled && (
             <a
               href={selectedProduct.sourceUrl}
               target="_blank"
@@ -329,6 +449,14 @@ function AveragePriceCard({ products, selectedProduct, onSelectProduct }) {
               View product
             </a>
           )}
+          <h3>Selected product price history</h3>
+          <HistoryChart
+            observations={selectedProduct.observations}
+            valueKey="price"
+            yAxisLabel="Price"
+            seriesBy="currency"
+            emptyMessage="No price history is available for this product."
+          />
         </>
       )}
     </div>
@@ -351,9 +479,18 @@ function App() {
   const [trackedWatchItemId, setTrackedWatchItemId] = useState(null);
   const [deletingWatchItemId, setDeletingWatchItemId] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isDeleteDataConfirmationOpen, setIsDeleteDataConfirmationOpen] =
+    useState(false);
+  const [isDeletingUserData, setIsDeletingUserData] = useState(false);
+  const [isMockModeEnabled, setIsMockModeEnabled] = useState(
+    () =>
+      import.meta.env.DEV &&
+      new URLSearchParams(window.location.search).get("mockData") === "true",
+  );
 
   const userId = session?.user?.id;
   const dropdownElRef = useRef(null);
+  const deleteDataCancelButtonRef = useRef(null);
   const visibleUserItemsList = useMemo(
     () => filterWatchlistForRole(userItemsList, reporterOrOwner),
     [reporterOrOwner, userItemsList],
@@ -361,6 +498,32 @@ function App() {
   const topProducts = useMemo(
     () => getTopProducts(rawMetricsData ?? []),
     [rawMetricsData],
+  );
+  const averagePriceHistory = useMemo(
+    () => getAveragePriceHistory(rawMetricsData ?? []),
+    [rawMetricsData],
+  );
+  const reporterMentions = useMemo(() => {
+    if (
+      !isMockModeEnabled ||
+      reporterOrOwner !== REPORTER ||
+      !trackedConcept
+    ) {
+      return [];
+    }
+
+    const concept = trackedConcept.trim().toLowerCase();
+    return mockReporterMentions.mentions
+      .filter((mention) => mention.concept.trim().toLowerCase() === concept)
+      .sort(
+        (a, b) =>
+          new Date(b.published_at).getTime() -
+          new Date(a.published_at).getTime(),
+      );
+  }, [isMockModeEnabled, reporterOrOwner, trackedConcept]);
+  const reporterMentionHistory = useMemo(
+    () => getDailyMentionHistory(reporterMentions),
+    [reporterMentions],
   );
   const selectedProduct =
     topProducts.find((product) => product.id === focusedProductId) ??
@@ -396,6 +559,20 @@ function App() {
   }, [isMenuOpen]);
 
   useEffect(() => {
+    if (!isDeleteDataConfirmationOpen) return;
+
+    deleteDataCancelButtonRef.current?.focus();
+    function handleKeyDown(event) {
+      if (event.key === "Escape" && !isDeletingUserData) {
+        setIsDeleteDataConfirmationOpen(false);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [isDeleteDataConfirmationOpen, isDeletingUserData]);
+
+  useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
     });
@@ -407,6 +584,7 @@ function App() {
         setUserItemsList([]);
         setTrackedWatchItemId(null);
         setTrackedConcept(null);
+        setRawData(null);
       }
       setSession(session);
     });
@@ -452,6 +630,8 @@ function App() {
     if (!session?.user || savingUserType) return;
 
     setSavingUserType(true);
+    setError(null);
+    setSuccessMessage(null);
     const { error } = await supabase.from("profiles").upsert(
       {
         id: session.user.id,
@@ -469,6 +649,7 @@ function App() {
       setTrackedWatchItemId(null);
       setTrackedConcept(null);
       setRawData(null);
+      setWatchItem("");
       setUserType(userType);
     }
     setSavingUserType(false);
@@ -477,6 +658,7 @@ function App() {
   async function callWithWatchItemAsString() {
     setLoadingStatus(true);
     setError(null);
+    setSuccessMessage(null);
     setRawData(null);
     const urlToUse = watchItemAsString.trim();
     try {
@@ -505,6 +687,8 @@ function App() {
         : userType.businessOwner;
 
     setSavingUserType(true);
+    setError(null);
+    setSuccessMessage(null);
     const { error } = await supabase.from("profiles").upsert(
       {
         id: session.user.id,
@@ -522,12 +706,14 @@ function App() {
       setTrackedWatchItemId(null);
       setTrackedConcept(null);
       setRawData(null);
+      setWatchItem("");
       setUserType(newUserType);
     }
     setSavingUserType(false);
   }
 
   async function addToWatchlist() {
+    setSuccessMessage(null);
     if (!session?.user) {
       setError("Sign in before adding a watch item.");
       return;
@@ -625,6 +811,12 @@ function App() {
         return;
       }
 
+      const deletedItem = userItemsList.find((item) => item.id === data.id);
+      const demoItemUrl =
+        reporterOrOwner === BUSINESS_OWNER
+          ? DEMO_WATCH_URL
+          : DEMO_REPORTER_CONCEPT;
+      const isDemoItem = deletedItem?.item_url === demoItemUrl;
       const remainingItems = userItemsList.filter(
         (item) => item.id !== data.id,
       );
@@ -634,7 +826,21 @@ function App() {
         setTrackedWatchItemId(nextItem?.id ?? null);
         setTrackedConcept(nextItem?.item_url ?? null);
       }
-      setSuccessMessage("Removed from your watchlist.");
+      if (trackedWatchItemId === data.id || isDemoItem) {
+        setRawData(null);
+        setFocusedProductId("");
+      }
+      if (isDemoItem) {
+        const currentUrl = new URL(window.location.href);
+        currentUrl.searchParams.delete("mockData");
+        window.history.replaceState(window.history.state, "", currentUrl);
+        setIsMockModeEnabled(false);
+      }
+      setSuccessMessage(
+        isDemoItem
+          ? "Demo item removed. Test mode has been turned off."
+          : "Removed from your watchlist.",
+      );
     } catch (requestError) {
       console.error("Error deleting watch item:", requestError);
       setError(
@@ -644,6 +850,154 @@ function App() {
       );
     } finally {
       setDeletingWatchItemId(null);
+    }
+  }
+
+  async function deleteAllWatchlistItems() {
+    if (!session?.user) {
+      setError("Sign in before deleting your watchlist data.");
+      return;
+    }
+
+    setIsDeletingUserData(true);
+    setError(null);
+    setSuccessMessage(null);
+    let watchlistDeleted = false;
+
+    try {
+      const { error } = await supabase
+        .from("watch_items")
+        .delete()
+        .eq("user_id", session.user.id);
+
+      if (error) {
+        console.error("Error deleting all watchlist items:", error.message);
+        setError(`Could not delete watchlist data: ${error.message}`);
+        return;
+      }
+
+      watchlistDeleted = true;
+      setUserItemsList([]);
+      setTrackedWatchItemId(null);
+      setTrackedConcept(null);
+      setRawData(null);
+      setFocusedProductId("");
+      setIsDeleteDataConfirmationOpen(false);
+
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        console.error(
+          "Error signing out after watchlist deletion:",
+          signOutError.message,
+        );
+        setError(
+          `Watchlist data was deleted, but sign out failed: ${signOutError.message}`,
+        );
+        return;
+      }
+
+      setSuccessMessage(
+        "All watchlist items were deleted and you were signed out. Your Supabase account still exists.",
+      );
+      // TODO: Delete the Supabase Auth user through a server-side flow.
+    } catch (requestError) {
+      console.error("Error deleting all watchlist items:", requestError);
+      setError(
+        `${
+          watchlistDeleted
+            ? "Watchlist data was deleted, but sign out failed"
+            : "Could not delete watchlist data"
+        }: ${
+          requestError instanceof Error ? requestError.message : "Unknown error"
+        }`,
+      );
+    } finally {
+      setIsDeletingUserData(false);
+    }
+  }
+
+  async function enableTestMode() {
+    if (!session?.user) {
+      setError("Sign in before enabling test mode.");
+      return;
+    }
+    if (![BUSINESS_OWNER, REPORTER].includes(reporterOrOwner)) {
+      setError("Choose a user role before enabling test mode.");
+      return;
+    }
+    if (askedAndLoading) return;
+
+    const demoItemUrl =
+      reporterOrOwner === BUSINESS_OWNER
+        ? DEMO_WATCH_URL
+        : DEMO_REPORTER_CONCEPT;
+
+    setIsMenuOpen(false);
+    setLoadingStatus(true);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const { data: existingItem, error: lookupError } = await supabase
+        .from("watch_items")
+        .select("id, item_url")
+        .eq("user_id", session.user.id)
+        .eq("item_url", demoItemUrl)
+        .maybeSingle();
+
+      if (lookupError) {
+        throw new Error(lookupError.message);
+      }
+
+      let demoItem = existingItem;
+      if (!demoItem) {
+        const { data, error } = await supabase
+          .from("watch_items")
+          .insert({
+            user_id: session.user.id,
+            item_url: demoItemUrl,
+          })
+          .select("id, item_url")
+          .single();
+
+        if (error) {
+          throw new Error(error.message);
+        }
+        if (!data) {
+          throw new Error("Database returned no demo watchlist item.");
+        }
+        demoItem = data;
+      }
+
+      if (!demoItem) {
+        throw new Error("Could not load the demo watchlist item.");
+      }
+
+      const currentUrl = new URL(window.location.href);
+      currentUrl.searchParams.set("mockData", "true");
+      window.history.replaceState(window.history.state, "", currentUrl);
+      setIsMockModeEnabled(true);
+      setUserItemsList((items) =>
+        items.some((item) => item.id === demoItem.id)
+          ? items
+          : [...items, demoItem],
+      );
+      setTrackedWatchItemId(demoItem.id);
+      setTrackedConcept(demoItemUrl);
+      setSuccessMessage(
+        reporterOrOwner === BUSINESS_OWNER
+          ? "Test mode enabled with demo Prisma sample data."
+          : "Test mode enabled with sample reporter mentions.",
+      );
+    } catch (requestError) {
+      console.error("Could not enable test mode:", requestError);
+      setError(
+        `Could not enable test mode: ${
+          requestError instanceof Error ? requestError.message : "Unknown error"
+        }`,
+      );
+    } finally {
+      setLoadingStatus(false);
     }
   }
 
@@ -746,7 +1100,12 @@ function App() {
     return () => {
       isCurrent = false;
     };
-  }, [reporterOrOwner, trackedWatchItemId, visibleUserItemsList]);
+  }, [
+    isMockModeEnabled,
+    reporterOrOwner,
+    trackedWatchItemId,
+    visibleUserItemsList,
+  ]);
 
   const valInputValidURL = validator.isURL(watchItemAsString.trim(), {
     require_protocol: true,
@@ -757,6 +1116,7 @@ function App() {
       provider: "google",
       options: {
         redirectTo: window.location.origin,
+        queryParams: { prompt: "select_account" },
       },
     });
 
@@ -839,9 +1199,39 @@ function App() {
                         ? " Business Owner"
                         : " Reporter"}
                     </a>
-                    <a href="#account" onClick={() => setIsMenuOpen(false)}>
-                      Account settings
-                    </a>
+                    {import.meta.env.DEV &&
+                      [userType.businessOwner, userType.reporter].includes(
+                        reporterOrOwner,
+                      ) && (
+                        <button
+                          type="button"
+                          onClick={enableTestMode}
+                          disabled={askedAndLoading}
+                          title={
+                            reporterOrOwner === userType.businessOwner
+                              ? "Adds a sample Prisma URL and uses fictional prices for layout testing."
+                              : "Adds a sample concept and uses fictional mention data for layout testing."
+                          }
+                        >
+                          {reporterOrOwner === userType.businessOwner
+                            ? isMockModeEnabled
+                              ? "Add Demo URL to Watchlist"
+                              : "Test Mode: Add Demo URL"
+                            : isMockModeEnabled
+                              ? "Add Demo Concept to Watchlist"
+                              : "Test Mode: Add Demo Concept"}
+                        </button>
+                      )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMenuOpen(false);
+                        setError(null);
+                        setIsDeleteDataConfirmationOpen(true);
+                      }}
+                    >
+                      Delete My Data
+                    </button>
                   </nav>
                 )}
               </div>
@@ -855,6 +1245,16 @@ function App() {
 
       <section id="center">
         <div>
+          {!session && successMessage && (
+            <p className="account-status-message" role="status">
+              {successMessage}
+            </p>
+          )}
+          {!session && error && (
+            <p className="account-status-message" role="alert">
+              {error}
+            </p>
+          )}
           {reporterOrOwner == userType.businessOwner && (
             <h1>
               Are you ready to get a sense for your rivals' strengths? <br />{" "}
@@ -985,11 +1385,14 @@ function App() {
       </section>
       <section id="watchlist">
         <>
-          <h2 style={{ marginBottom: "16px", textAlign: "center" }}>
-            {reporterOrOwner === userType.businessOwner
-              ? "Site Watchlist"
-              : "Concept Watchlist"}
-          </h2>
+          {session && (
+            <h2 style={{ marginBottom: "16px", textAlign: "center" }}>
+              {reporterOrOwner === userType.businessOwner
+                ? "Site Watchlist"
+                : "Concept Watchlist"}
+            </h2>
+          )}
+
           <div className="watchListGroup">
             {visibleUserItemsList.map((item) => (
               <div
@@ -1000,6 +1403,8 @@ function App() {
                 onClick={() => {
                   setTrackedWatchItemId(item.id);
                   setTrackedConcept(item.item_url);
+                  setError(null);
+                  setSuccessMessage(null);
                 }}
               >
                 <button
@@ -1038,48 +1443,105 @@ function App() {
         {reporterOrOwner === userType.businessOwner &&
           rawMetricsData !== null && (
             <>
+              {isMockModeEnabled && (
+                <p className="mock-data-banner" role="status">
+                  {reporterOrOwner === userType.businessOwner
+                    ? "Demo data only — generated sample prices, not live Prisma listings."
+                    : "Demo data only — fictional article mentions and sources for layout testing."}
+                </p>
+              )}
               <AveragePriceCard
                 products={topProducts}
                 selectedProduct={selectedProduct}
                 onSelectProduct={setFocusedProductId}
+                isMockModeEnabled={isMockModeEnabled}
               />
               <div className="price-chart-card business-price-chart-card">
-                <h2>Price over time</h2>
-                {selectedProduct ? (
-                  <HistoryChart
-                    observations={selectedProduct.observations}
-                    valueKey="price"
-                    yAxisLabel="Price"
-                    seriesBy="currency"
-                    emptyMessage="No price history is available for this product."
-                  />
-                ) : (
-                  <p>
-                    Price history will appear here when product observations are
-                    available.
-                  </p>
-                )}
+                <h2>Average price over time</h2>
+                <HistoryChart
+                  observations={averagePriceHistory}
+                  valueKey="price"
+                  yAxisLabel="Average price"
+                  seriesBy="currency"
+                  emptyMessage="Average price history will appear when products have observations."
+                />
               </div>
             </>
           )}
         {reporterOrOwner === userType.reporter && trackedConcept && (
           <>
+            {isMockModeEnabled && (
+              <p className="mock-data-banner" role="status">
+                Demo data only — fictional article mentions and sources for
+                layout testing.
+              </p>
+            )}
             <div className="price-chart-card">
-              <h2>Prevalence over time</h2>
+              <h2>Mentions over time</h2>
               <HistoryChart
-                observations={[]}
+                observations={reporterMentionHistory}
                 valueKey="prevalence"
-                yAxisLabel="Prevalence"
-                emptyMessage={`External mention history for ${trackedConcept} will appear here once its Supabase data source is connected.`}
+                yAxisLabel="Stories published"
+                emptyMessage={
+                  isMockModeEnabled
+                    ? `No demo mentions are available for ${trackedConcept}.`
+                    : `External mention history for ${trackedConcept} will appear here once its Supabase data source is connected.`
+                }
               />
             </div>
             <TopThreeListCard
-              title={`Top 3 ${trackedConcept[0].toUpperCase() + trackedConcept.slice(1)} Mentions`}
-              items={["Item 1", "Item 2", "Item 3"]}
+              title={`Top 3 Mentions of ${trackedConcept[0].toUpperCase() + trackedConcept.slice(1)}`}
+              items={reporterMentions.slice(0, 3)}
             />
           </>
         )}
       </section>
+      {isDeleteDataConfirmationOpen && (
+        <div
+          className="delete-data-backdrop"
+          onClick={(event) => {
+            if (event.target === event.currentTarget && !isDeletingUserData) {
+              setIsDeleteDataConfirmationOpen(false);
+            }
+          }}
+        >
+          <section
+            className="delete-data-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-data-title"
+            aria-describedby="delete-data-description"
+          >
+            <h2 id="delete-data-title">Delete My Data?</h2>
+            <p id="delete-data-description">
+              This permanently deletes all of your saved watchlist items,
+              including concepts and URLs from every role. Your Supabase account
+              will remain active, and you will be signed out afterward.
+            </p>
+            <div className="delete-data-actions">
+              <button
+                type="button"
+                className="delete-data-cancel"
+                ref={deleteDataCancelButtonRef}
+                onClick={() => {
+                  setIsDeleteDataConfirmationOpen(false);
+                }}
+                disabled={isDeletingUserData}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="delete-data-confirm"
+                onClick={deleteAllWatchlistItems}
+                disabled={isDeletingUserData}
+              >
+                {isDeletingUserData ? "Deleting..." : "Delete watchlist data"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </>
   );
 }
