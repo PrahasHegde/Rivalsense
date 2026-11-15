@@ -24,7 +24,30 @@ Chart.register(
   Tooltip,
 );
 
-function PriceHistoryChart({ observations }) {
+const BUSINESS_OWNER = "business_owner";
+const REPORTER = "reporter";
+
+function filterWatchlistForRole(items, role) {
+  if (role === BUSINESS_OWNER) {
+    return items.filter((item) =>
+      validator.isURL(item.item_url, { require_protocol: true }),
+    );
+  }
+  if (role === REPORTER) {
+    return items.filter(
+      (item) => !validator.isURL(item.item_url, { require_protocol: true }),
+    );
+  }
+  return [];
+}
+
+function HistoryChart({
+  observations,
+  valueKey,
+  yAxisLabel,
+  seriesBy = null,
+  emptyMessage,
+}) {
   const canvasRef = useRef(null);
 
   const points = useMemo(
@@ -32,37 +55,46 @@ function PriceHistoryChart({ observations }) {
       observations
         .map((observation) => ({
           observedAt: new Date(observation.observed_at),
-          price:
-            observation.price == null || observation.price === ""
+          value:
+            observation[valueKey] == null || observation[valueKey] === ""
               ? Number.NaN
-              : Number(observation.price),
-          currency: observation.currency?.trim().toUpperCase() || "Unknown",
+              : Number(observation[valueKey]),
+          series: seriesBy
+            ? String(observation[seriesBy] ?? "")
+                .trim()
+                .toUpperCase() || "Unknown"
+            : null,
         }))
         .filter(
           (point) =>
             !Number.isNaN(point.observedAt.getTime()) &&
-            Number.isFinite(point.price),
+            Number.isFinite(point.value),
         )
         .sort((a, b) => a.observedAt - b.observedAt),
-    [observations],
+    [observations, seriesBy, valueKey],
   );
 
   useEffect(() => {
     if (!canvasRef.current || points.length === 0) return;
 
-    const currencies = [...new Set(points.map((point) => point.currency))];
+    const series = seriesBy
+      ? [...new Set(points.map((point) => point.series))]
+      : [null];
     const colors = ["#034263", "#a73bff", "#d65a31", "#238636"];
     const chart = new Chart(canvasRef.current, {
       type: "line",
       data: {
         labels: points.map((point) => point.observedAt.toLocaleString()),
-        datasets: currencies.map((currency, index) => ({
-          label:
-            currency === "Unknown"
-              ? "Price (unknown currency)"
-              : `Price (${currency})`,
+        datasets: series.map((seriesValue, index) => ({
+          label: seriesValue
+            ? seriesValue === "Unknown"
+              ? `${yAxisLabel} (unknown ${seriesBy})`
+              : `${yAxisLabel} (${seriesValue})`
+            : yAxisLabel,
           data: points.map((point) =>
-            point.currency === currency ? point.price : null,
+            seriesValue === null || point.series === seriesValue
+              ? point.value
+              : null,
           ),
           borderColor: colors[index % colors.length],
           backgroundColor: colors[index % colors.length],
@@ -79,22 +111,226 @@ function PriceHistoryChart({ observations }) {
           },
           y: {
             beginAtZero: true,
-            title: { display: true, text: "Price" },
+            title: { display: true, text: yAxisLabel },
           },
         },
       },
     });
 
     return () => chart.destroy();
-  }, [points]);
+  }, [points, seriesBy, yAxisLabel]);
 
   if (points.length === 0) {
-    return <p>No valid price observations are available to chart.</p>;
+    return <p>{emptyMessage}</p>;
   }
 
   return (
     <div className="price-chart">
-      <canvas ref={canvasRef} aria-label="Price history line chart" />
+      <canvas ref={canvasRef} aria-label={`${yAxisLabel} history line chart`} />
+    </div>
+  );
+}
+
+function TopThreeListCard({ title, items }) {
+  return (
+    <div className="top-three-list-card">
+      <h2>{title}</h2>
+      <ul style={{ listStyleType: "none", paddingLeft: "10px" }}>
+        {items.map((item, index) => (
+          <li key={index}>
+            {item} (title of news story) <br />
+            From (source of news story) <br />
+            Published on (date of news story) <br />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function productNameFromObservation(observation) {
+  const extractedProduct = observation.extracted_product;
+  return (
+    observation.product_name ??
+    extractedProduct?.product_name ??
+    extractedProduct?.name ??
+    extractedProduct?.product?.name ??
+    null
+  );
+}
+
+function getTopProducts(observations = []) {
+  const groupedProducts = new Map();
+
+  observations.forEach((observation) => {
+    const id = observation.listing_id ?? observation.source_url;
+    if (!id) return;
+
+    const product = groupedProducts.get(id) ?? {
+      id,
+      name: null,
+      observations: [],
+    };
+    product.name ??= productNameFromObservation(observation);
+    product.observations.push(observation);
+    groupedProducts.set(id, product);
+  });
+
+  return [...groupedProducts.values()]
+    .map((product) => {
+      const pricedObservations = product.observations
+        .filter((observation) => {
+          const price = Number(observation.price);
+          const observedAt = new Date(observation.observed_at).getTime();
+          return (
+            observation.price != null &&
+            observation.price !== "" &&
+            Number.isFinite(price) &&
+            price >= 0 &&
+            Number.isFinite(observedAt)
+          );
+        })
+        .sort(
+          (a, b) =>
+            new Date(a.observed_at).getTime() -
+            new Date(b.observed_at).getTime(),
+        );
+      const latestObservation = pricedObservations.at(-1);
+      if (!latestObservation) return null;
+
+      const sourceUrl =
+        latestObservation.source_url ??
+        product.observations[0]?.source_url ??
+        null;
+      let name = product.name;
+      if (!name && sourceUrl) {
+        try {
+          const productUrl = new URL(sourceUrl);
+          const pathName = productUrl.pathname
+            .split("/")
+            .filter(Boolean)
+            .at(-1);
+          name = pathName
+            ? decodeURIComponent(pathName).replace(/[-_]+/g, " ")
+            : productUrl.hostname;
+        } catch {
+          name = sourceUrl;
+        }
+      }
+
+      return {
+        ...product,
+        name: name ?? "Tracked product",
+        sourceUrl,
+        currentPrice: latestObservation.price,
+        currency: latestObservation.currency,
+      };
+    })
+    .filter(Boolean)
+    .sort(
+      (a, b) =>
+        Number(a.currentPrice) - Number(b.currentPrice) ||
+        a.name.localeCompare(b.name),
+    )
+    .slice(0, 5);
+}
+
+function formatPrice(price, currency) {
+  const amount = Number(price);
+  if (!Number.isFinite(amount)) return "Price unavailable";
+
+  const currencyCode = String(currency ?? "")
+    .trim()
+    .toUpperCase();
+  if (/^[A-Z]{3}$/.test(currencyCode)) {
+    return new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency: currencyCode,
+    }).format(amount);
+  }
+  return amount.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+async function fetchCompetitorObservations(competitorUrl) {
+  const host = new URL(competitorUrl).hostname
+    .toLowerCase()
+    .replace(/^www\./, "");
+  const { data, error } = await supabase
+    .from("price_observations")
+    .select("*")
+    .ilike("source_url", `%${host}%`);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return (data ?? []).filter((observation) => {
+    try {
+      return (
+        new URL(observation.source_url).hostname
+          .toLowerCase()
+          .replace(/^www\./, "") === host
+      );
+    } catch {
+      return false;
+    }
+  });
+}
+
+function AveragePriceCard({ products, selectedProduct, onSelectProduct }) {
+  return (
+    <div className="average-price-card">
+      <div className="average-price-card-header">
+        <h2>Competitor products</h2>
+        <select
+          aria-label="Choose a competitor product"
+          value={selectedProduct?.id ?? ""}
+          onChange={(event) => onSelectProduct(event.target.value)}
+          disabled={products.length === 0}
+        >
+          {products.length === 0 ? (
+            <option value="">No products available</option>
+          ) : (
+            products.map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name}
+              </option>
+            ))
+          )}
+        </select>
+      </div>
+      <p className="product-ranking-note">
+        Showing up to five observed products ranked by latest price. Sales data
+        is unavailable.
+      </p>
+      {!selectedProduct ? (
+        <p>
+          No saved product observations were found for this competitor. The
+          current service records individual product pages; it does not discover
+          a store catalog.
+        </p>
+      ) : (
+        <>
+          <p className="product-current-price">
+            Current observed price:{" "}
+            <strong>
+              {formatPrice(
+                selectedProduct.currentPrice,
+                selectedProduct.currency,
+              )}
+            </strong>
+          </p>
+          {selectedProduct.sourceUrl && (
+            <a
+              href={selectedProduct.sourceUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View product
+            </a>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -103,16 +339,33 @@ function App() {
   const [session, setSession] = useState(null);
   const [watchItemAsString, setWatchItem] = useState("");
   const [rawMetricsData, setRawData] = useState(null);
+  const [focusedProductId, setFocusedProductId] = useState("");
+  const [trackedConcept, setTrackedConcept] = useState(null);
   const [askedAndLoading, setLoadingStatus] = useState(false);
   const [error, setError] = useState(null);
   const [successMessage, setSuccessMessage] = useState(null);
   const [reporterOrOwner, setUserType] = useState(null);
   const [profileLoading, setProfileLoading] = useState(false);
   const [savingUserType, setSavingUserType] = useState(false);
-
+  const [userItemsList, setUserItemsList] = useState([]);
+  const [trackedWatchItemId, setTrackedWatchItemId] = useState(null);
+  const [deletingWatchItemId, setDeletingWatchItemId] = useState(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+  const userId = session?.user?.id;
   const dropdownElRef = useRef(null);
+  const visibleUserItemsList = useMemo(
+    () => filterWatchlistForRole(userItemsList, reporterOrOwner),
+    [reporterOrOwner, userItemsList],
+  );
+  const topProducts = useMemo(
+    () => getTopProducts(rawMetricsData ?? []),
+    [rawMetricsData],
+  );
+  const selectedProduct =
+    topProducts.find((product) => product.id === focusedProductId) ??
+    topProducts[0] ??
+    null;
 
   const ErrorType = {
     urlInvalid: "The given URL is invalid.",
@@ -121,8 +374,8 @@ function App() {
   };
 
   const userType = {
-    businessOwner: "business_owner",
-    reporter: "reporter",
+    businessOwner: BUSINESS_OWNER,
+    reporter: REPORTER,
   };
 
   useEffect(() => {
@@ -150,6 +403,11 @@ function App() {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!session?.user) {
+        setUserItemsList([]);
+        setTrackedWatchItemId(null);
+        setTrackedConcept(null);
+      }
       setSession(session);
     });
 
@@ -207,6 +465,10 @@ function App() {
       console.error("Error saving profile:", error.message);
       setError(error.message);
     } else {
+      setUserItemsList([]);
+      setTrackedWatchItemId(null);
+      setTrackedConcept(null);
+      setRawData(null);
       setUserType(userType);
     }
     setSavingUserType(false);
@@ -217,26 +479,17 @@ function App() {
     setError(null);
     setRawData(null);
     const urlToUse = watchItemAsString.trim();
-    // console.log("urlToUse:", urlToUse);
     try {
-      const { data, error } = await supabase
-        .from("price_observations")
-        .select("*")
-        .eq("source_url", urlToUse);
-
-      if (error) {
-        console.error("Error loading price observations:", error.message);
-        setError(`${ErrorType.backendApiError}: ${error.message}`);
-        return;
-      }
-      console.log("Raw data received:", data);
-      setRawData(data);
+      const competitorObservations =
+        await fetchCompetitorObservations(urlToUse);
+      setFocusedProductId("");
+      setRawData(competitorObservations);
     } catch (requestError) {
       console.error("Error loading price observations:", requestError);
       setError(
-        requestError instanceof Error
-          ? requestError.message
-          : ErrorType.backendApiError,
+        `${ErrorType.backendApiError}: ${
+          requestError instanceof Error ? requestError.message : "Unknown error"
+        }`,
       );
     } finally {
       setLoadingStatus(false);
@@ -265,6 +518,10 @@ function App() {
       console.error("Error changing profile:", error.message);
       setError(error.message);
     } else {
+      setUserItemsList([]);
+      setTrackedWatchItemId(null);
+      setTrackedConcept(null);
+      setRawData(null);
       setUserType(newUserType);
     }
     setSavingUserType(false);
@@ -275,13 +532,27 @@ function App() {
       setError("Sign in before adding a watch item.");
       return;
     }
-    if (reporterOrOwner !== userType.reporter || askedAndLoading) {
+    if (
+      ![userType.reporter, userType.businessOwner].includes(reporterOrOwner) ||
+      askedAndLoading
+    ) {
       return;
     }
 
     const preppedItem = watchItemAsString.trim();
     if (preppedItem === "") {
-      setError("Enter a concept to add to your watchlist.");
+      setError(
+        reporterOrOwner === userType.businessOwner
+          ? "Enter a URL to add to your watchlist."
+          : "Enter a concept to add to your watchlist.",
+      );
+      return;
+    }
+    if (
+      reporterOrOwner === userType.businessOwner &&
+      !validator.isURL(preppedItem, { require_protocol: true })
+    ) {
+      setError(ErrorType.urlInvalid);
       return;
     }
 
@@ -289,10 +560,14 @@ function App() {
     setError(null);
     setSuccessMessage(null);
     try {
-      const { error } = await supabase.from("watch_items").insert({
-        user_id: session.user.id,
-        item_url: preppedItem,
-      });
+      const { data, error } = await supabase
+        .from("watch_items")
+        .insert({
+          user_id: session.user.id,
+          item_url: preppedItem,
+        })
+        .select("id")
+        .single();
 
       if (error) {
         console.error("Error adding watch item:", error.message);
@@ -300,8 +575,14 @@ function App() {
         return;
       }
 
+      setTrackedConcept(preppedItem);
       setWatchItem("");
       setSuccessMessage("Added to your watchlist.");
+      setTrackedWatchItemId(data.id);
+      setUserItemsList((prevList) => [
+        ...prevList,
+        { item_url: preppedItem, id: data.id },
+      ]);
     } catch (requestError) {
       console.error("Error adding watch item:", requestError);
       setError(
@@ -313,6 +594,159 @@ function App() {
       setLoadingStatus(false);
     }
   }
+
+  async function deleteWatchItem(itemId) {
+    if (!session?.user) {
+      setError("Sign in before deleting a watch item.");
+      return;
+    }
+    if (deletingWatchItemId !== null) return;
+
+    setDeletingWatchItemId(itemId);
+    setError(null);
+    setSuccessMessage(null);
+
+    try {
+      const { data, error } = await supabase
+        .from("watch_items")
+        .delete()
+        .eq("id", itemId)
+        .eq("user_id", session.user.id)
+        .select("id")
+        .maybeSingle();
+
+      if (error) {
+        console.error("Error deleting watch item:", error.message);
+        setError(`Could not delete the watch item: ${error.message}`);
+        return;
+      }
+      if (!data) {
+        setError("The watch item was not found or could not be deleted.");
+        return;
+      }
+
+      const remainingItems = userItemsList.filter(
+        (item) => item.id !== data.id,
+      );
+      setUserItemsList(remainingItems);
+      if (trackedWatchItemId === data.id) {
+        const nextItem = remainingItems[0] ?? null;
+        setTrackedWatchItemId(nextItem?.id ?? null);
+        setTrackedConcept(nextItem?.item_url ?? null);
+      }
+      setSuccessMessage("Removed from your watchlist.");
+    } catch (requestError) {
+      console.error("Error deleting watch item:", requestError);
+      setError(
+        `Could not delete the watch item: ${
+          requestError instanceof Error ? requestError.message : "Unknown error"
+        }`,
+      );
+    } finally {
+      setDeletingWatchItemId(null);
+    }
+  }
+
+  async function fetchWatchlist(userId, role) {
+    const { data, error } = await supabase
+      .from("watch_items")
+      .select("id, item_url")
+      .eq("user_id", userId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return filterWatchlistForRole(
+      (data ?? []).map((item) => ({
+        item_url: item.item_url,
+        id: item.id,
+      })),
+      role,
+    );
+  }
+
+  useEffect(() => {
+    let isCurrent = true;
+
+    if (!userId || ![BUSINESS_OWNER, REPORTER].includes(reporterOrOwner)) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    async function loadWatchlist() {
+      try {
+        const items = await fetchWatchlist(userId, reporterOrOwner);
+        if (isCurrent) {
+          setUserItemsList(items);
+          const currentItem = items[0] ?? null;
+          setTrackedWatchItemId(currentItem?.id ?? null);
+          setTrackedConcept(currentItem?.item_url ?? null);
+        }
+      } catch (requestError) {
+        if (!isCurrent) return;
+        console.error("Error fetching watchlist:", requestError);
+        setError(
+          `Could not fetch watchlist: ${
+            requestError instanceof Error
+              ? requestError.message
+              : "Unknown error"
+          }`,
+        );
+      }
+    }
+
+    loadWatchlist();
+    return () => {
+      isCurrent = false;
+    };
+  }, [reporterOrOwner, userId]);
+
+  useEffect(() => {
+    let isCurrent = true;
+    const activeItem = visibleUserItemsList.find(
+      (item) => item.id === trackedWatchItemId,
+    );
+
+    if (reporterOrOwner !== BUSINESS_OWNER || !activeItem?.item_url) {
+      return () => {
+        isCurrent = false;
+      };
+    }
+
+    async function loadTrackedItemObservations() {
+      setLoadingStatus(true);
+      setError(null);
+      setRawData(null);
+      try {
+        const observations = await fetchCompetitorObservations(
+          activeItem.item_url,
+        );
+        if (isCurrent) {
+          setFocusedProductId("");
+          setRawData(observations);
+        }
+      } catch (requestError) {
+        if (!isCurrent) return;
+        console.error("Error loading tracked item observations:", requestError);
+        setError(
+          `Could not load tracked item price history: ${
+            requestError instanceof Error
+              ? requestError.message
+              : "Unknown error"
+          }`,
+        );
+      } finally {
+        if (isCurrent) setLoadingStatus(false);
+      }
+    }
+
+    loadTrackedItemObservations();
+    return () => {
+      isCurrent = false;
+    };
+  }, [reporterOrOwner, trackedWatchItemId, visibleUserItemsList]);
 
   const valInputValidURL = validator.isURL(watchItemAsString.trim(), {
     require_protocol: true,
@@ -399,9 +833,6 @@ function App() {
                     id="profile-menu"
                     aria-label="Profile"
                   >
-                    <a href="#dashboard" onClick={() => setIsMenuOpen(false)}>
-                      Dashboard
-                    </a>
                     <a href="#watchlist" onClick={() => toggleUserType()}>
                       Toggle Role:
                       {reporterOrOwner === userType.businessOwner
@@ -499,6 +930,21 @@ function App() {
                     setError(null);
                     setSuccessMessage(null);
                   }}
+                  onKeyPress={(event) => {
+                    if (event.key === "Enter") {
+                      setError(null);
+                      setSuccessMessage(null);
+                      if (reporterOrOwner === userType.businessOwner) {
+                        if (valInputValidURL) {
+                          callWithWatchItemAsString();
+                        } else {
+                          setError(ErrorType.urlInvalid);
+                        }
+                      } else if (reporterOrOwner === userType.reporter) {
+                        addToWatchlist();
+                      }
+                    }
+                  }}
                 />
                 <button
                   onClick={() => {
@@ -518,8 +964,13 @@ function App() {
                 >
                   {reporterOrOwner === userType.reporter
                     ? "Add Concept to Watchlist"
-                    : "Add Site to Watchlist"}
+                    : "Check Price History"}
                 </button>
+                {reporterOrOwner === userType.businessOwner && (
+                  <button onClick={addToWatchlist} disabled={askedAndLoading}>
+                    Add Site to Watchlist
+                  </button>
+                )}
               </div>
               {askedAndLoading && (
                 <div className="loading-container">
@@ -532,12 +983,101 @@ function App() {
           )}
         </div>
       </section>
-      <section id="dashboard">
-        {rawMetricsData !== null && (
-          <div className="price-chart-card">
-            <h2>Price history</h2>
-            <PriceHistoryChart observations={rawMetricsData} />
+      <section id="watchlist">
+        <>
+          <h2 style={{ marginBottom: "16px", textAlign: "center" }}>
+            {reporterOrOwner === userType.businessOwner
+              ? "Site Watchlist"
+              : "Concept Watchlist"}
+          </h2>
+          <div className="watchListGroup">
+            {visibleUserItemsList.map((item) => (
+              <div
+                key={item.id}
+                className={`watchlist-item${
+                  trackedWatchItemId === item.id ? " is-tracked" : ""
+                }`}
+                onClick={() => {
+                  setTrackedWatchItemId(item.id);
+                  setTrackedConcept(item.item_url);
+                }}
+              >
+                <button
+                  type="button"
+                  className="watchlist-select-button"
+                  aria-pressed={trackedWatchItemId === item.id}
+                >
+                  {item.item_url}
+                </button>
+                {reporterOrOwner === userType.businessOwner &&
+                  validator.isURL(item.item_url, {
+                    require_protocol: true,
+                  }) && (
+                    <a href={item.item_url} target="_blank" rel="noreferrer">
+                      Open URL
+                    </a>
+                  )}
+                <button
+                  type="button"
+                  className="watchlist-delete-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    deleteWatchItem(item.id);
+                  }}
+                  aria-label={`Delete ${item.item_url} from watchlist`}
+                  disabled={deletingWatchItemId !== null}
+                >
+                  {deletingWatchItemId === item.id ? "Deleting..." : "Delete"}
+                </button>
+              </div>
+            ))}
           </div>
+        </>
+      </section>
+      <section id="dashboard">
+        {reporterOrOwner === userType.businessOwner &&
+          rawMetricsData !== null && (
+            <>
+              <AveragePriceCard
+                products={topProducts}
+                selectedProduct={selectedProduct}
+                onSelectProduct={setFocusedProductId}
+              />
+              <div className="price-chart-card business-price-chart-card">
+                <h2>Price over time</h2>
+                {selectedProduct ? (
+                  <HistoryChart
+                    observations={selectedProduct.observations}
+                    valueKey="price"
+                    yAxisLabel="Price"
+                    seriesBy="currency"
+                    emptyMessage="No price history is available for this product."
+                  />
+                ) : (
+                  <p>
+                    Price history will appear here when product observations are
+                    available.
+                  </p>
+                )}
+              </div>
+            </>
+          )}
+        {reporterOrOwner === userType.reporter && trackedConcept && (
+          <>
+            <div className="price-chart-card">
+              <h2>Prevalence over time</h2>
+              <HistoryChart
+                observations={[]}
+                valueKey="prevalence"
+                yAxisLabel="Prevalence"
+                emptyMessage={`External mention history for ${trackedConcept} will appear here once its Supabase data source is connected.`}
+              />
+            </div>
+            <TopThreeListCard
+              title={`Top 3 ${trackedConcept[0].toUpperCase() + trackedConcept.slice(1)} Mentions`}
+              items={["Item 1", "Item 2", "Item 3"]}
+            />
+          </>
         )}
       </section>
     </>

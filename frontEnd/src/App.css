@@ -4,13 +4,11 @@
   gap: 25px;
   place-content: center;
   place-items: center;
-  flex-grow: 1;
-  min-height: 100vh;
-  min-height: 100svh;
   box-sizing: border-box;
+  padding: 112px 24px 24px;
   text-align: center;
   @media (max-width: 1024px) {
-    padding: 32px 20px 24px;
+    padding: 112px 20px 24px;
     gap: 18px;
   }
   p {
@@ -19,18 +17,74 @@
 }
 
 #dashboard {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 24px;
   width: 100%;
   box-sizing: border-box;
   padding: 24px clamp(16px, 3vw, 32px);
 }
 
-.price-chart-card {
+.price-chart-card,
+.top-three-list-card {
+  flex: 1 1 420px;
+  min-width: 0;
   padding: 24px;
+  margin-top: 12px;
   border: 1px solid var(--accent-border);
   border-radius: 20px;
   background: white;
   box-shadow: var(--shadow);
   text-align: left;
+}
+
+.average-price-card {
+  flex: 1 1 420px;
+  min-width: 0;
+  box-sizing: border-box;
+  padding: 24px;
+  margin-top: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 20px;
+  background: white;
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+
+.average-price-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.average-price-card-header h2 {
+  margin: 0 0 16px;
+}
+
+.average-price-card-header select {
+  width: min(50%, 360px);
+  min-width: 160px;
+  padding: 8px 10px;
+  border: 1px solid var(--accent-border);
+  border-radius: 8px;
+  background: white;
+  color: var(--text-h);
+  font: inherit;
+}
+
+.product-ranking-note {
+  color: var(--text-h);
+  font-size: 14px;
+}
+
+.product-current-price {
+  font-size: 18px;
+}
+
+.average-price-card h3 {
+  margin: 24px 0 12px;
 }
 
 .price-chart-card h2 {
@@ -40,6 +94,22 @@
 .price-chart {
   position: relative;
   height: 360px;
+}
+
+.business-price-chart-card {
+  flex: 1 1 420px;
+  min-width: 0;
+}
+
+@media (max-width: 640px) {
+  .average-price-card-header {
+    flex-direction: column;
+  }
+
+  .average-price-card-header select {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 #spacer {
@@ -259,4 +329,68 @@
 .dropdown-menu a:focus-visible {
   background: var(--accent);
   outline: none;
+}
+
+.watchlist-item {
+  display: flex;
+  flex: 0 1 auto;
+  width: fit-content;
+  max-width: 100%;
+  box-sizing: border-box;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--accent-border);
+  border-radius: 12px;
+}
+
+.watchlist-item.is-tracked {
+  border-color: var(--accent);
+  background: var(--accent-bg);
+}
+
+.watchlist-select-button {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+
+.watchlist-select-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.watchlist-delete-button {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #b42318;
+  color: white;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+}
+
+.watchlist-delete-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.watchListGroup {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: flex-start;
+  gap: 12px;
 }
